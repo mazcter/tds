@@ -1,10 +1,23 @@
 import time, uuid
+import jwt
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 ALLOWED_ORIGIN = "https://dash-r7bicf.example.com"
-EMAIL = "24f1000019@ds.study.iitm.ac.in"  # replace with your actual logged-in email
+EMAIL = "your-real-email@example.com"
+
+ISSUER = "https://idp.exam.local"
+AUDIENCE = "tds-bsgqvsgt.apps.exam.local"
+PUBLIC_KEY = """-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA2okOHspNjgA+2rTLbeuY
+cxiP/hG8C6Sb9iwg3yiLAA4HCnpITcbWCSelbvbYGuc3EbNy4xFyf5Cbj5DHJMID
+EkryOgyd2giIIIBOUBj8S63uGcnRpOBh9NFatfNwheKuzsPuVNldu6A9cNteNpXc
+WyJjG2axVfmq7i6SuKr1JoWYG7xTTAvKPujSl4OtsQfO3h5NepzdfXpr28oNnzfW
+ed+zclR6BcmNNo/WVfJ4xyCLSf0BCOgdTgW6PdaChd1l9VDetJZVEgC5tkyvXsfI
+SI6iyrYbKR0NEBSqq4XkadEjsCs4F1RncsS4LlgniT7GlkL9Mce3b0wGLs9/7ZIX
+dQIDAQAB
+-----END PUBLIC KEY-----"""
 
 app = FastAPI()
 
@@ -27,7 +40,7 @@ async def cors_middleware(request: Request, call_next):
         if origin == ALLOWED_ORIGIN:
             resp = JSONResponse(content={}, status_code=200)
             resp.headers["Access-Control-Allow-Origin"] = ALLOWED_ORIGIN
-            resp.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+            resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
             resp.headers["Access-Control-Allow-Headers"] = "*"
             resp.headers["Vary"] = "Origin"
             return resp
@@ -54,3 +67,29 @@ async def stats(values: str):
         "max": mx,
         "mean": mean,
     }
+
+@app.post("/verify")
+async def verify(request: Request):
+    try:
+        body = await request.json()
+        token = body.get("token")
+        if not token:
+            return JSONResponse(status_code=401, content={"valid": False})
+
+        claims = jwt.decode(
+            token,
+            PUBLIC_KEY,
+            algorithms=["RS256"],
+            audience=AUDIENCE,
+            issuer=ISSUER,
+            options={"require": ["exp", "iss", "aud"]},
+        )
+
+        return {
+            "valid": True,
+            "email": claims.get("email"),
+            "sub": claims.get("sub"),
+            "aud": claims.get("aud"),
+        }
+    except Exception:
+        return JSONResponse(status_code=401, content={"valid": False})
