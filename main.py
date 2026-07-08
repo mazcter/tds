@@ -1,4 +1,6 @@
-import time, uuid
+import os
+import time
+import uuid
 import jwt
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -19,7 +21,20 @@ SI6iyrYbKR0NEBSqq4XkadEjsCs4F1RncsS4LlgniT7GlkL9Mce3b0wGLs9/7ZIX
 dQIDAQAB
 -----END PUBLIC KEY-----"""
 
+DEFAULTS = {
+    "port": "8000",
+    "workers": "1",
+    "debug": "false",
+    "log_level": "info",
+    "api_key": "default-secret-000",
+}
+
+YAML_CONFIG = {
+    "api_key": "key-aa4nq8t4fh",
+}
+
 app = FastAPI()
+
 
 class TimingRequestIDMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
@@ -31,15 +46,19 @@ class TimingRequestIDMiddleware(BaseHTTPMiddleware):
         response.headers["X-Process-Time"] = f"{process_time:.6f}"
         return response
 
+
 app.add_middleware(TimingRequestIDMiddleware)
+
 
 @app.middleware("http")
 async def cors_middleware(request: Request, call_next):
     origin = request.headers.get("origin")
+
     if request.url.path == "/effective-config":
-    response = await call_next(request)
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    return response
+        response = await call_next(request)
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        return response
+
     if request.method == "OPTIONS":
         if origin == ALLOWED_ORIGIN:
             resp = JSONResponse(content={}, status_code=200)
@@ -49,11 +68,13 @@ async def cors_middleware(request: Request, call_next):
             resp.headers["Vary"] = "Origin"
             return resp
         return JSONResponse(content={}, status_code=400)
+
     response = await call_next(request)
     if origin == ALLOWED_ORIGIN:
         response.headers["Access-Control-Allow-Origin"] = ALLOWED_ORIGIN
         response.headers["Vary"] = "Origin"
     return response
+
 
 @app.get("/stats")
 async def stats(values: str):
@@ -71,6 +92,7 @@ async def stats(values: str):
         "max": mx,
         "mean": mean,
     }
+
 
 @app.post("/verify")
 async def verify(request: Request):
@@ -98,23 +120,6 @@ async def verify(request: Request):
     except Exception:
         return JSONResponse(status_code=401, content={"valid": False})
 
-import os
-from fastapi import FastAPI, Request
-
-app = FastAPI()
-
-DEFAULTS = {
-    "port": "8000",
-    "workers": "1",
-    "debug": "false",
-    "log_level": "info",
-    "api_key": "default-secret-000",
-}
-
-# config.development.yaml equivalent — hardcoded since env is fixed for grading
-YAML_CONFIG = {
-    "api_key": "key-aa4nq8t4fh",
-}
 
 def load_dotenv_file(path=".env"):
     env = {}
@@ -128,8 +133,10 @@ def load_dotenv_file(path=".env"):
                 env[k.strip()] = v.strip()
     return env
 
+
 def to_bool(v):
     return str(v).strip().lower() in ("true", "1", "yes", "on")
+
 
 def coerce(key, value):
     if key in ("port", "workers"):
@@ -137,6 +144,7 @@ def coerce(key, value):
     if key == "debug":
         return to_bool(value)
     return str(value)
+
 
 @app.get("/effective-config")
 async def effective_config(request: Request):
