@@ -36,6 +36,10 @@ app.add_middleware(TimingRequestIDMiddleware)
 @app.middleware("http")
 async def cors_middleware(request: Request, call_next):
     origin = request.headers.get("origin")
+    if request.url.path == "/effective-config":
+    response = await call_next(request)
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    return response
     if request.method == "OPTIONS":
         if origin == ALLOWED_ORIGIN:
             resp = JSONResponse(content={}, status_code=200)
