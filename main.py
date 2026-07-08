@@ -2,9 +2,14 @@ import os
 import time
 import uuid
 import jwt
+from collections import defaultdict
+from typing import List
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
+from pydantic import BaseModel
+
+# ---------- Config ----------
 
 ALLOWED_ORIGIN = "https://dash-r7bicf.example.com"
 EMAIL = "24f1000019@ds.study.iitm.ac.in"
@@ -33,6 +38,12 @@ YAML_CONFIG = {
     "api_key": "key-aa4nq8t4fh",
 }
 
+ANALYTICS_API_KEY = "ak_obb7c5boq3g4wff6wlr23b7q"
+
+OPEN_CORS_PATHS = ("/effective-config", "/analytics")
+
+# ---------- App Setup ----------
+
 app = FastAPI()
 
 
@@ -54,7 +65,13 @@ app.add_middleware(TimingRequestIDMiddleware)
 async def cors_middleware(request: Request, call_next):
     origin = request.headers.get("origin")
 
-    if request.url.path == "/effective-config":
+    if request.url.path in OPEN_CORS_PATHS:
+        if request.method == "OPTIONS":
+            resp = JSONResponse(content={}, status_code=200)
+            resp.headers["Access-Control-Allow-Origin"] = "*"
+            resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+            resp.headers["Access-Control-Allow-Headers"] = "*"
+            return resp
         response = await call_next(request)
         response.headers["Access-Control-Allow-Origin"] = "*"
         return response
@@ -76,6 +93,8 @@ async def cors_middleware(request: Request, call_next):
     return response
 
 
+# ---------- /stats ----------
+
 @app.get("/stats")
 async def stats(values: str):
     nums = [int(x.strip()) for x in values.split(",") if x.strip() != ""]
@@ -93,6 +112,8 @@ async def stats(values: str):
         "mean": mean,
     }
 
+
+# ---------- /verify ----------
 
 @app.post("/verify")
 async def verify(request: Request):
@@ -120,6 +141,8 @@ async def verify(request: Request):
     except Exception:
         return JSONResponse(status_code=401, content={"valid": False})
 
+
+# ---------- /effective-config ----------
 
 def load_dotenv_file(path=".env"):
     env = {}
@@ -174,3 +197,41 @@ async def effective_config(request: Request):
     result = {k: coerce(k, config.get(k)) for k in ("port", "workers", "debug", "log_level", "api_key")}
     result["api_key"] = "****"
     return result
+
+
+# ---------- /analytics ----------
+
+class Event(BaseModel):
+    user: str
+    amount: float
+    ts: int
+
+
+class AnalyticsRequest(BaseModel):
+    events: List[Event]
+
+
+@app.post("/analytics")
+async def analytics(request: Request, body: AnalyticsRequest):
+    api_key = request.headers.get("X-API-Key")
+    if api_key != ANALYTICS_API_KEY:
+        return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
+
+    events = body.events
+    total_events = len(events)
+    unique_users = len(set(e.user for e in events))
+    revenue = sum(e.amount for e in events if e.amount > 0)
+
+    user_totals = defaultdict(float)
+    for e in events:
+        if e.amount > 0:
+            user_totals[e.user] += e.amount
+    top_user = max(user_totals, key=user_totals.get) if user_totals else None
+
+    return {
+        "email": EMAIL,
+        "total_events": total_events,
+        "unique_users": unique_users,
+        "revenue": revenue,
+        "top_user": top_user,
+    }
